@@ -1,0 +1,16 @@
+[Unit]
+Description=BMW OBC Kiosk
+After=network-online.target bluetooth.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/obc
+Environment=SDL_VIDEODRIVER=kmsdrm
+ExecStart=/usr/bin/python3 /home/pi/obc/app.py
+Restart=always
+RestartSec=1
+
+[Install]
+WantedBy=multi-user.target

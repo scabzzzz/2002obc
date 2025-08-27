@@ -6,9 +6,9 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=pi
-WorkingDirectory=/home/pi/obc
+WorkingDirectory=/home/david/bmw/2002obc
 Environment=SDL_VIDEODRIVER=kmsdrm
-ExecStart=/usr/bin/python3 /home/pi/obc/app.py
+ExecStart=/usr/bin/python3 /home/david/bmw/2002obc/app.py
 Restart=always
 RestartSec=1
 

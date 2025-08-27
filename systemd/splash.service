@@ -6,7 +6,7 @@ Before=multi-user.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/fbi -T 1 -d /dev/fb0 -noverbose -a /home/pi/obc/splash.png
+ExecStart=/usr/bin/fbi -T 1 -d /dev/fb0 -noverbose -a /home/david/bmw/2002obc/splash.png
 StandardInput=tty
 StandardOutput=tty
 

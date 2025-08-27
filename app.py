@@ -27,7 +27,7 @@ def main():
                 pygame.quit(); return
         logical.fill(BLACK)
         font = pygame.font.Font(None, 24)
-        txt = font.render("BMW OBC Scaffold", True, AMBER)
+        txt = font.render("BMW 2002", True, AMBER)
         logical.blit(txt, (40, 100))
         scaled = pygame.transform.scale(logical, physical)
         screen.blit(scaled, (0,0))

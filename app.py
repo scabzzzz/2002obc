@@ -80,14 +80,14 @@ def draw_home(surf, logo_small):
     if logo_small: surf.blit(logo_small,(MARGIN,MARGIN))
     text(surf,"BMW",(LOG_W-RIGHT_W - GUTTER - font(18).size("BMW")[0])//2, MARGIN+4, sz=18)
 
-    # LEFT-ALIGNED TIME (smaller, mid-screen)
+    # ---- BIG TIME (reduced to half size) ----
     t=time.strftime("%I:%M%p").lstrip("0")
-    time_sz=36
-    time_x=MARGIN+2                    # <<< left edge
-    time_y=LOG_H//2 - 30               # middle region
+    time_sz=18                      # half of the previous 36
+    time_x=MARGIN+2
+    time_y=LOG_H//2 - 15
     text(surf,t,time_x,time_y,sz=time_sz,calc=True)
 
-    # TEMP | DATE just below time, pipe close to temp
+    # ---- TEMP | DATE ----
     y=time_y+time_sz+6
     tmp=temp_display(DEFAULT_TEMP_F); f24=font(24); tmp_w=f24.size(tmp)[0]
     text(surf,tmp,MARGIN+6,y,sz=24)
@@ -97,7 +97,8 @@ def draw_home(surf, logo_small):
     text(surf,dt,px+8,y,sz=24)
 
     # OIL counter bottom-left
-    od=days_since(STATE.last_oil_ts); text(surf,f"OIL {od} d",MARGIN+6,LOG_H-18,sz=16)
+    od=days_since(STATE.last_oil_ts)
+    text(surf,f"OIL {od} d",MARGIN+6,LOG_H-18,sz=16)
 
     labels=["VOLT","OIL","TEMP","MENU"]; btns=right_buttons(surf,labels)
     return btns, labels
@@ -198,7 +199,6 @@ def main():
                         else:
                             if lab=="HOME": STATE.page="HOME"
                             elif lab=="BACK":
-                                # FIX: if on BRIGHTNESS, BACK -> MENU; else BACK -> HOME
                                 STATE.page = "MENU" if STATE.page=="BRIGHTNESS" else "HOME"
                             elif lab=="MENU": STATE.page="MENU"
 

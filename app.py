@@ -1,94 +1,129 @@
 #!/usr/bin/env python3
+# BMW 2002 OBC – wireframe home (clean calculator style)
+# Runs best under X11 (startx). No driver forcing here.
+
 import os, sys, time, pygame
 
-# --------- CONFIG ---------
-WIN_W, WIN_H = 800, 480         # window size
-LOG_W, LOG_H = 320, 240         # low-res canvas for pixel vibe
+# -------- CONFIG --------
+LOG_W, LOG_H = 320, 240          # low-res canvas for pixel look
 AMBER = (224,122,0); BLACK=(0,0,0)
 PROJECT = os.path.dirname(os.path.abspath(__file__))
-SPLASH = os.path.join(PROJECT, "splash.png")
+SPLASH  = os.path.join(PROJECT, "splash.png")  # your 911x911
 
-# --------- DRAW ---------
+# -------- HELPERS --------
 def load_logo(sz):
     try:
         img = pygame.image.load(SPLASH).convert_alpha()
-        return pygame.transform.smoothscale(img, (sz, sz))
+        return pygame.transform.smoothscale(img,(sz,sz))
     except Exception:
         return None
 
-def draw_text(surf, txt, x, y, size=18, color=AMBER):
-    font = pygame.font.Font(None, size)
-    surf.blit(font.render(txt, True, color), (x, y))
+def font(size):  # swap to pixel TTF later if desired
+    return pygame.font.Font(None, size)
 
-def draw_buttons(surf, labels):
-    h = 28; y = LOG_H - h
-    w = LOG_W // len(labels)
-    rects=[]
-    for i, lab in enumerate(labels):
-        r = pygame.Rect(i*w+2, y+2, w-4, h-4)
-        pygame.draw.rect(surf, AMBER, r, width=1)
-        draw_text(surf, lab, r.x+6, r.y+6, 16)
-        rects.append(r)
-    return rects
+def draw_text(surf, txt, xy, size=18, color=AMBER):
+    surf.blit(font(size).render(txt, True, color), xy)
 
-def home_page(surf, logo):
+def rect(surf, r, w=1, color=AMBER):
+    pygame.draw.rect(surf, color, r, width=w)
+
+# -------- LAYOUT (logical coordinates) --------
+def layout_home():
+    # boxes per your sketch (all in LOG_W x LOG_H space)
+    margin, gutter = 6, 6
+    col_btn_w = 110
+    header_h = 28
+    right_x = LOG_W - margin - col_btn_w
+
+    # regions
+    logo_r   = pygame.Rect(margin, margin, 36, 36)
+    title_y  = margin
+    time_r   = pygame.Rect(margin, header_h+10, LOG_W - col_btn_w - 2*margin - gutter, 64)
+    info_r   = pygame.Rect(margin, time_r.bottom + 18, time_r.w, 40)  # temp/date row
+
+    # right buttons (4 stacked)
+    btn_h = (LOG_H - header_h - 3*margin) // 4
+    btns = []
+    y = header_h + margin
+    for _ in range(4):
+        btns.append(pygame.Rect(right_x, y, col_btn_w, btn_h - gutter))
+        y += btn_h
+
+    # split info row into two boxes (TEMP, DATE)
+    left_info  = pygame.Rect(info_r.x, info_r.y, info_r.w//2 - gutter//2, info_r.h)
+    right_info = pygame.Rect(left_info.right + gutter, info_r.y, info_r.w - left_info.w - gutter, info_r.h)
+
+    return logo_r, title_y, time_r, left_info, right_info, btns
+
+# -------- PAGES --------
+def draw_home(surf, logo_sm, tick):
     surf.fill(BLACK)
-    if logo: surf.blit(logo, (10,10))
-    draw_text(surf, "BMW OBC", 80, 12, 22)
-    draw_text(surf, "-"*28, 8, 32, 14)
-    draw_text(surf, f"TIME  {time.strftime('%H:%M')}", 16, 70, 22)
-    draw_text(surf, f"DATE  {time.strftime('%d %b %Y').upper()}", 16, 98, 18)
-    draw_text(surf, "WEATHER", 16, 132, 16)
-    draw_text(surf, "NASHVILLE", 16, 152, 16)
-    draw_text(surf, "82°F CLOUDY", 16, 170, 16)
-    draw_text(surf, "H88 L71 POP30%", 16, 188, 16)
-    return draw_buttons(surf, ["MENU"])
+    logo_r, title_y, time_r, box_temp, box_date, btns = layout_home()
 
-def menu_page(surf):
-    surf.fill(BLACK)
-    draw_text(surf, "MENU", 12, 12, 22)
-    draw_text(surf, "-"*20, 8, 32, 14)
-    draw_text(surf, "• HOME", 16, 70, 18)
-    draw_text(surf, "• SETTINGS (stub)", 16, 92, 18)
-    draw_text(surf, "• ABOUT (stub)", 16, 114, 18)
-    return draw_buttons(surf, ["BACK", "HOME"])
+    # Header: small “roundel” + title centered
+    if logo_sm:
+        surf.blit(logo_sm, logo_r.topleft)
+    else:
+        # fallback roundel
+        cx, cy = logo_r.center
+        pygame.draw.circle(surf, AMBER, (cx,cy), 16, 2)
+        pygame.draw.line(surf, AMBER, (cx-10,cy), (cx+10,cy), 2)
+        pygame.draw.line(surf, AMBER, (cx,cy-10), (cx,cy+10), 2)
 
-# --------- APP ---------
+    title = "BMW 2002"
+    title_s = font(18).render(title, True, AMBER)
+    surf.blit(title_s, ((LOG_W - title_s.get_width())//2, title_y+4))
+
+    # Big time
+    t = time.strftime("%I:%M%p").lstrip("0")  # “9:56PM”
+    draw_text(surf, t, (time_r.x+4, time_r.y+6), size=42)
+
+    # Temp / Date boxes
+    rect(surf, box_temp); rect(surf, box_date)
+    draw_text(surf, f"{75 + (tick%3)}F", (box_temp.x+8, box_temp.y+8), size=24)  # fake temp
+    draw_text(surf, time.strftime("%-m-%-d").upper(), (box_date.x+8, box_date.y+8), size=24)
+
+    # Right column buttons
+    labels = ["VOLT", "OIL", "TEMP", "DIAG"]
+    for r, lab in zip(btns, labels):
+        rect(surf, r)
+        # center label inside each button
+        s = font(22).render(lab, True, AMBER)
+        surf.blit(s, (r.x + (r.w - s.get_width())//2, r.y + (r.h - s.get_height())//2))
+
+    return btns, box_temp, box_date
+
+# -------- APP --------
 def main():
     fullscreen = ("--fullscreen" in sys.argv) or ("-f" in sys.argv)
     pygame.init()
     flags = pygame.FULLSCREEN if fullscreen else 0
-    screen = pygame.display.set_mode((WIN_W, WIN_H), flags)
-    pygame.display.set_caption("BMW OBC (minimal)")
+    screen = pygame.display.set_mode((800,480), flags)
+    pygame.display.set_caption("BMW 2002 OBC (home)")
     logical = pygame.Surface((LOG_W, LOG_H))
     clock = pygame.time.Clock()
     info = pygame.display.Info()
     phys = (info.current_w, info.current_h)
+    logo_sm = load_logo(36)
 
-    logo = load_logo(56)
-    page = "HOME"
-    running = True
+    running, tick = True, 0
     while running:
         for e in pygame.event.get():
-            if e.type == pygame.QUIT: running = False
-            elif e.type == pygame.KEYDOWN:
-                if e.key in (pygame.K_ESCAPE, pygame.K_q): running = False
-                if e.key in (pygame.K_SPACE, pygame.K_RETURN):
-                    page = "MENU" if page=="HOME" else "HOME"
+            if e.type == pygame.QUIT: running=False
+            elif e.type == pygame.KEYDOWN and e.key in (pygame.K_ESCAPE, pygame.K_q): running=False
             elif e.type == pygame.MOUSEBUTTONDOWN:
                 mx,my = e.pos
                 lx = int(mx * (LOG_W/phys[0])); ly = int(my * (LOG_H/phys[1]))
-                for i, r in enumerate(btns):
-                    if r.collidepoint((lx,ly)):
-                        if page=="HOME" and i==0: page="MENU"
-                        elif page=="MENU" and i==0: page="HOME"
-                        elif page=="MENU" and i==1: page="HOME"
+                # hit detection after draw (we re-use rects)
+                if any(r.collidepoint((lx,ly)) for r in last_btns):
+                    # stub: flash or print for now
+                    print("BUTTON:", [ "VOLT","OIL","TEMP","DIAG" ][ [r.collidepoint((lx,ly)) for r in last_btns ].index(True) ])
 
-        if page=="HOME": btns = home_page(logical, logo)
-        else:            btns = menu_page(logical)
+        last_btns,_,_ = draw_home(logical, logo_sm, tick)
+        tick += 1
 
-        scaled = pygame.transform.scale(logical, (WIN_W, WIN_H))
-        screen.blit(scaled, (0,0))
+        scaled = pygame.transform.scale(logical, (800,480))
+        screen.blit(scaled,(0,0))
         pygame.display.flip()
         clock.tick(30)
 

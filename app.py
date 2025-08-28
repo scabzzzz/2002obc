@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
-# BMW 2002 OBC – calculator UI (X11 via startx)
+# BMW 2002 OBC – calc style, startx-friendly
 
 import os, sys, time, json, pygame
 
 # ---------- CONFIG ----------
 LOG_W, LOG_H = 320, 240
-AMBER = (224,122,0); BLACK=(0,0,0)
-PROJECT = os.path.dirname(os.path.abspath(__file__))
-SPLASH  = os.path.join(PROJECT, "splash.png")
-OIL_FILE= os.path.join(PROJECT, "oil.json")
+AMBER=(224,122,0); BLACK=(0,0,0)
+PROJECT=os.path.dirname(os.path.abspath(__file__))
+SPLASH=os.path.join(PROJECT,"splash.png")
+OIL_FILE=os.path.join(PROJECT,"oil.json")
+CLOCK_FONT=os.path.join(PROJECT,"assets/fonts/PressStart2P-Regular.ttf")  # optional
 
-RIGHT_W = 110; MARGIN=6; GUTTER=6; HEADER_H=28
-DEFAULT_TEMP_F = 75
+RIGHT_W=110; MARGIN=6; GUTTER=6; HEADER_H=28
+DEFAULT_TEMP_F=75
 FAKE_VOLT="12.5 V"; FAKE_OILTMP="190 °F"; FAKE_COOL="182 °F"
 
 # ---------- STATE ----------
@@ -20,7 +21,7 @@ class State:
         self.page="HOME"
         self.temp_c=False
         self.speed_kmh=False
-        self.brightness=100      # 0..100 (software dim)
+        self.brightness=100
         self.auto_night=True
         self.last_oil_ts=self._load_oil_ts()
     def _load_oil_ts(self):
@@ -35,7 +36,17 @@ STATE=State()
 
 # ---------- HELPERS ----------
 def font(sz): return pygame.font.Font(None, sz)
-def text(surf,s,x,y,sz=18,color=AMBER): surf.blit(font(sz).render(s,True,color),(x,y))
+def font_calc(sz):
+    # “calculator” vibe if present
+    try:
+        return pygame.font.Font(CLOCK_FONT, sz) if os.path.exists(CLOCK_FONT) else pygame.font.Font(None, sz)
+    except Exception:
+        return pygame.font.Font(None, sz)
+
+def text(surf,s,x,y,sz=18,color=AMBER, calc=False):
+    f = font_calc(sz) if calc else font(sz)
+    surf.blit(f.render(s,True,color),(x,y))
+
 def rect(surf,r,w=1,color=AMBER): pygame.draw.rect(surf,color,r,width=w)
 def days_since(ts): return (int(time.time())-int(ts))//86400
 def temp_display(f): return f"{round((f-32)*5/9)}°C" if STATE.temp_c else f"{f}°F"
@@ -49,9 +60,11 @@ def load_img(path):
     try: return pygame.image.load(path).convert_alpha()
     except Exception: return None
 
-def fit_center(img, phys):
+def fit_center_percent(img, phys, percent=0.85):
+    # scale-to-fit then scale down to 85% (leave room for bottom “BMW” text)
     iw,ih=img.get_size(); pw,ph=phys
-    k=min(pw/iw, ph/ih); nw,nh=int(iw*k), int(ih*k)
+    k=min(pw/iw, ph/ih)*percent
+    nw,nh=int(iw*k), int(ih*k)
     surf=pygame.Surface(phys, pygame.SRCALPHA); surf.fill(BLACK)
     surf.blit(pygame.transform.smoothscale(img,(nw,nh)), ((pw-nw)//2,(ph-nh)//2))
     return surf
@@ -69,33 +82,49 @@ def right_buttons(surf, labels):
     return btns
 
 # ---------- PAGES ----------
-def draw_header(surf, title, logo_topright=False, logo_img=None):
-    # title centered
-    ts=font(18).render(title,True,AMBER)
-    surf.blit(ts, ((LOG_W-RIGHT_W - GUTTER - ts.get_width())//2, MARGIN+4))
-    if logo_topright and logo_img:
-        surf.blit(logo_img, (LOG_W - MARGIN - RIGHT_W - GUTTER - logo_img.get_width(), MARGIN))
+def draw_header_center_logo(surf, title, logo_img):
+    # content area excludes right rail
+    content_w = LOG_W - RIGHT_W - GUTTER - 2*MARGIN
+    content_x = MARGIN
+    # center logo
+    if logo_img:
+        lx = content_x + (content_w - logo_img.get_width())//2
+        surf.blit(logo_img, (lx, MARGIN))
+    # title centered below logo baseline a touch
+    ts=font(16).render(title,True,AMBER)
+    tx = content_x + (content_w - ts.get_width())//2
+    surf.blit(ts, (tx, MARGIN+logo_img.get_height()+2 if logo_img else MARGIN+4))
+    pygame.draw.line(surf, AMBER, (MARGIN, HEADER_H-2), (LOG_W-RIGHT_W-GUTTER, HEADER_H-2), 1)
 
 def draw_home(surf, logo_small):
     surf.fill(BLACK)
-    # small roundel + "BMW"
+    # logo top-left
     if logo_small: surf.blit(logo_small,(MARGIN,MARGIN))
+    # title
     text(surf,"BMW", (LOG_W-RIGHT_W - GUTTER - font(18).size("BMW")[0])//2, MARGIN+4, sz=18)
 
-    # time (reduced ~25% from prior huge)
+    # time (shifted right so it never overlaps logo)
     right_x=LOG_W-MARGIN-RIGHT_W
-    time_w=right_x-(MARGIN+GUTTER)
+    time_left = MARGIN + (logo_small.get_width()+8 if logo_small else 0) + 4
     t=time.strftime("%I:%M%p").lstrip("0")
-    text(surf,t, MARGIN+2, HEADER_H+2, sz=58)
+    text(surf, t, time_left, HEADER_H-4, sz=48, calc=True)  # calculator font
 
-    # TEMP | DATE row
-    y = HEADER_H + 2 + 54 + 10
-    tmp=temp_display(DEFAULT_TEMP_F); dt=time.strftime("%m-%d-%Y")
+    # TEMP | DATE (no year), pipe moved near temp
+    y = HEADER_H + 44
+    tmp = temp_display(DEFAULT_TEMP_F)
+    f24 = font(24)
+    tmp_w = f24.size(tmp)[0]
+    pipe_x = time_left if time_left > MARGIN+6 else MARGIN+6  # keep left-ish
+    # temp left
     text(surf, tmp, MARGIN+6, y, sz=24)
-    pygame.draw.line(surf, AMBER, (LOG_W//2, y-2), (LOG_W//2, y+28), 1)
-    text(surf, dt, LOG_W//2+8, y, sz=24)
+    # pipe right after temp width
+    px = MARGIN+6 + tmp_w + 10
+    pygame.draw.line(surf, AMBER, (px, y-2), (px, y+28), 1)
+    # date right of pipe (MM-DD only)
+    dt = time.strftime("%m-%d")
+    text(surf, dt, px+8, y, sz=24)
 
-    # OIL counter at very bottom-left
+    # OIL counter bottom-left
     od=days_since(STATE.last_oil_ts)
     text(surf, f"OIL {od} d", MARGIN+6, LOG_H-18, sz=16)
 
@@ -103,10 +132,9 @@ def draw_home(surf, logo_small):
     btns=right_buttons(surf, labels)
     return btns, labels
 
-def draw_value_page(surf, title, kv, logo_tr):
+def draw_value_page(surf, title, kv, logo_center):
     surf.fill(BLACK)
-    draw_header(surf, title, logo_topright=True, logo_img=logo_tr)
-    pygame.draw.line(surf, AMBER, (MARGIN, HEADER_H-2), (LOG_W-RIGHT_W-GUTTER, HEADER_H-2), 1)
+    draw_header_center_logo(surf, title, logo_center)
     y=HEADER_H+12
     for k,v in kv:
         text(surf,k,MARGIN+8,y,18); y+=20
@@ -118,62 +146,45 @@ def draw_volt(s,a): return draw_value_page(s,"VOLTAGE",[("BATTERY",FAKE_VOLT)],a
 def draw_oil(s,a):
     od=days_since(STATE.last_oil_ts)
     btns,labs=draw_value_page(s,"OIL",[("TEMP",FAKE_OILTMP),("CHANGE (days)",f"{od} d")],a)
-    # reset button
     r=pygame.Rect(MARGIN+8, LOG_H-46, LOG_W-RIGHT_W-2*MARGIN-16, 28)
     rect(s,r); text(s,"RESET OIL TIMER", r.x+8, r.y+6, 18)
     return btns,labs,[("RESET",r)]
 def draw_temp(s,a): return draw_value_page(s,"TEMPERATURE",[("COOLANT",FAKE_COOL),("AMBIENT",temp_display(DEFAULT_TEMP_F))],a)
 
-def draw_menu(surf, logo_tr):
-    surf.fill(BLACK); draw_header(surf,"MENU",logo_topright=True, logo_img=logo_tr)
-    pygame.draw.line(surf, AMBER,(MARGIN,HEADER_H-2),(LOG_W-RIGHT_W-GUTTER,HEADER_H-2),1)
+def draw_menu(surf, logo_center):
+    surf.fill(BLACK); draw_header_center_logo(surf,"MENU",logo_center)
     boxes=[]; y=HEADER_H+14
 
-    # temp units
-    r1=pygame.Rect(MARGIN+6,y,LOG_W-RIGHT_W-2*MARGIN-8,26); rect(surf,r1)
-    text(surf,"Temp Units",r1.x+8,r1.y+4,16); text(surf,"°C" if STATE.temp_c else "°F", r1.right-60,r1.y+4,16)
-    boxes.append(("Temp Units",r1)); y+=34
+    def opt(label,value):
+        nonlocal y
+        r=pygame.Rect(MARGIN+6,y,LOG_W-RIGHT_W-2*MARGIN-8,26); rect(surf,r)
+        text(surf,label,r.x+8,r.y+4,16); text(surf,value,r.right-60,r.y+4,16)
+        boxes.append((label,r)); y+=34
 
-    # speed units
-    r2=pygame.Rect(MARGIN+6,y,LOG_W-RIGHT_W-2*MARGIN-8,26); rect(surf,r2)
-    text(surf,"Speed Units",r2.x+8,r2.y+4,16); text(surf,"KMH" if STATE.speed_kmh else "MPH", r2.right-60,r2.y+4,16)
-    boxes.append(("Speed Units",r2)); y+=34
-
-    # auto night
-    r3=pygame.Rect(MARGIN+6,y,LOG_W-RIGHT_W-2*MARGIN-8,26); rect(surf,r3)
-    text(surf,"Auto Night",r3.x+8,r3.y+4,16); text(surf,"ON" if STATE.auto_night else "OFF", r3.right-60,r3.y+4,16)
-    boxes.append(("Auto Night",r3)); y+=34
-
-    # brightness → opens big slider page
-    r4=pygame.Rect(MARGIN+6,y,LOG_W-RIGHT_W-2*MARGIN-8,26); rect(surf,r4)
-    text(surf,"Brightness",r4.x+8,r4.y+4,16); text(surf,f"{STATE.brightness:3d}%", r4.right-60,r4.y+4,16)
-    boxes.append(("Brightness",r4)); y+=34
+    opt("Temp Units","°C" if STATE.temp_c else "°F")
+    opt("Speed Units","KMH" if STATE.speed_kmh else "MPH")
+    opt("Auto Night","ON" if STATE.auto_night else "OFF")
+    opt("Brightness", f"{STATE.brightness:3d}%")  # opens big slider page
 
     btns=right_buttons(surf, ["HOME","BACK","MENU"])
     return btns, ["HOME","BACK","MENU"], boxes
 
-def draw_brightness(surf, logo_tr):
-    surf.fill(BLACK); draw_header(surf,"BRIGHTNESS",logo_topright=True, logo_img=logo_tr)
-    pygame.draw.line(surf, AMBER,(MARGIN,HEADER_H-2),(LOG_W-RIGHT_W-GUTTER,HEADER_H-2),1)
-
-    # Large slider
+def draw_brightness(surf, logo_center):
+    surf.fill(BLACK); draw_header_center_logo(surf,"BRIGHTNESS",logo_center)
     bar=pygame.Rect(MARGIN+10, HEADER_H+40, LOG_W-RIGHT_W-2*MARGIN-20, 18)
     rect(surf, bar, 1)
-    fillw = int((STATE.brightness/100)*(bar.w-2))
+    fillw=int((STATE.brightness/100)*(bar.w-2))
     pygame.draw.rect(surf, AMBER, (bar.x+1, bar.y+1, fillw, bar.h-2))
     text(surf, f"{STATE.brightness:3d}%", bar.x, bar.y-26, 22)
-
-    # tap anywhere on bar to set
     btns=right_buttons(surf, ["HOME","BACK","MENU"])
     return btns, ["HOME","BACK","MENU"], [("BAR",bar)]
 
 # ---------- SPLASH ----------
 def show_splash(screen, phys, img):
     if not img: return
-    frame = fit_center(img, phys)
-    # overlay bold "BMW"
-    overlay = font(64).render("BMW", True, AMBER)
-    frame.blit(overlay, ((phys[0]-overlay.get_width())//2, (phys[1]-overlay.get_height())//2))
+    frame = fit_center_percent(img, phys, percent=0.85)
+    lbl = font_calc(48).render("BMW", True, AMBER)
+    frame.blit(lbl, ((phys[0]-lbl.get_width())//2, phys[1]-lbl.get_height()-20))
     screen.blit(frame,(0,0)); pygame.display.flip(); pygame.time.wait(3000)
 
 # ---------- MAIN ----------
@@ -182,15 +193,14 @@ def main():
     pygame.init()
     flags = pygame.FULLSCREEN if fullscreen else 0
     screen = pygame.display.set_mode((800,480), flags)
-    pygame.display.set_caption("BMW 2002 OBC")
+    pygame.display.set_caption("BMW")
     info=pygame.display.Info(); phys=(info.current_w,info.current_h)
     logical=pygame.Surface((LOG_W,LOG_H)); clock=pygame.time.Clock()
 
     splash_img = load_img(SPLASH)
     show_splash(screen, phys, splash_img)
-
     logo_small = pygame.transform.smoothscale(splash_img,(36,36)) if splash_img else None
-    logo_tr    = pygame.transform.smoothscale(splash_img,(28,28)) if splash_img else None
+    logo_center = pygame.transform.smoothscale(splash_img,(24,24)) if splash_img else None
 
     last_btns=[]; last_labels=[]; menu_boxes=[]; oil_boxes=[]; bright_boxes=[]
 
@@ -202,7 +212,6 @@ def main():
             elif e.type==pygame.MOUSEBUTTONDOWN:
                 lx=int(e.pos[0]*(LOG_W/phys[0])); ly=int(e.pos[1]*(LOG_H/phys[1]))
 
-                # menu toggles
                 if STATE.page=="MENU" and menu_boxes:
                     for label,r in menu_boxes:
                         if r.collidepoint((lx,ly)):
@@ -211,20 +220,17 @@ def main():
                             elif label=="Auto Night": STATE.auto_night=not STATE.auto_night
                             elif label=="Brightness": STATE.page="BRIGHTNESS"
 
-                # bright page bar
                 if STATE.page=="BRIGHTNESS" and bright_boxes:
-                    for label,r in bright_boxes:
-                        if label=="BAR" and r.collidepoint((lx,ly)):
+                    for _,r in bright_boxes:
+                        if r.collidepoint((lx,ly)):
                             rel=max(0,min(1,(lx-r.x)/max(1,r.w)))
                             STATE.brightness=int(rel*100)
 
-                # oil reset
                 if STATE.page=="OIL" and oil_boxes:
                     for label,r in oil_boxes:
                         if label=="RESET" and r.collidepoint((lx,ly)):
                             STATE.last_oil_ts=int(time.time()); STATE._save_oil_ts(STATE.last_oil_ts)
 
-                # right-rail buttons
                 for i,r in enumerate(last_btns):
                     if r.collidepoint((lx,ly)):
                         lab=last_labels[i]
@@ -235,29 +241,26 @@ def main():
                             elif lab=="BACK": STATE.page="HOME"
                             elif lab=="MENU": STATE.page="MENU"
 
-        # draw
         if STATE.page=="HOME":
             last_btns,last_labels=draw_home(logical,logo_small); menu_boxes=[]; oil_boxes=[]; bright_boxes=[]
         elif STATE.page=="VOLT":
-            last_btns,last_labels=draw_volt(logical,logo_tr); menu_boxes=[]; oil_boxes=[]; bright_boxes=[]
+            last_btns,last_labels=draw_volt(logical,logo_center); menu_boxes=[]; oil_boxes=[]; bright_boxes=[]
         elif STATE.page=="OIL":
-            last_btns,last_labels,oil_boxes=draw_oil(logical,logo_tr); menu_boxes=[]; bright_boxes=[]
+            last_btns,last_labels,oil_boxes=draw_oil(logical,logo_center); menu_boxes=[]; bright_boxes=[]
         elif STATE.page=="TEMP":
-            last_btns,last_labels=draw_temp(logical,logo_tr); menu_boxes=[]; oil_boxes=[]; bright_boxes=[]
+            last_btns,last_labels=draw_temp(logical,logo_center); menu_boxes=[]; oil_boxes=[]; bright_boxes=[]
         elif STATE.page=="MENU":
-            last_btns,last_labels,menu_boxes=draw_menu(logical,logo_tr); oil_boxes=[]; bright_boxes=[]
+            last_btns,last_labels,menu_boxes=draw_menu(logical,logo_center); oil_boxes=[]; bright_boxes=[]
         elif STATE.page=="BRIGHTNESS":
-            last_btns,last_labels,bright_boxes=draw_brightness(logical,logo_tr); menu_boxes=[]; oil_boxes=[]
+            last_btns,last_labels,bright_boxes=draw_brightness(logical,logo_center); menu_boxes=[]; oil_boxes=[]
 
-        # present with software dim
         frame=pygame.transform.scale(logical,(800,480))
         dim=night_dim_factor()
         if dim<1.0:
             dark=pygame.Surface((800,480), pygame.SRCALPHA)
             dark.fill((0,0,0,int((1-dim)*255)))
             frame.blit(dark,(0,0))
-        screen.blit(frame,(0,0)); pygame.display.flip()
-        clock.tick(30)
+        screen.blit(frame,(0,0)); pygame.display.flip(); clock.tick(30)
 
     pygame.quit()
 

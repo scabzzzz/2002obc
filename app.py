@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-# BMW 2002 OBC – calc style, startx-friendly
+# BMW 2002 OBC – calc style, startx-friendly (Clock toggle: digital/analog)
 
-import os, sys, time, json, pygame
+import os, sys, time, json, math, pygame
 
 # ---------- CONFIG ----------
 LOG_W, LOG_H = 320, 240
@@ -9,12 +9,13 @@ AMBER=(224,122,0); BLACK=(0,0,0)
 PROJECT=os.path.dirname(os.path.abspath(__file__))
 SPLASH=os.path.join(PROJECT,"splash.png")
 OIL_FILE=os.path.join(PROJECT,"oil.json")
-CLOCK_FONT=os.path.join(PROJECT,"assets/fonts/PressStart2P-Regular.ttf")
+CLOCK_FONT=os.path.join(PROJECT,"assets/fonts/PressStart2P-Regular.ttf")  # optional calc font
 
 RIGHT_W=110; MARGIN=6; GUTTER=6; HEADER_H=28
 DEFAULT_TEMP_F=75
 FAKE_VOLT="12.5 V"; FAKE_OILTMP="190 °F"; FAKE_COOL="182 °F"
 
+# ---------- STATE ----------
 class State:
     def __init__(self):
         self.page="HOME"
@@ -22,6 +23,7 @@ class State:
         self.speed_kmh=False
         self.brightness=100
         self.auto_night=True
+        self.clock_mode="digital"     # "digital" or "analog"
         self.last_oil_ts=self._load_oil_ts()
     def _load_oil_ts(self):
         try: return json.load(open(OIL_FILE))["last_oil_ts"]
@@ -33,6 +35,7 @@ class State:
 
 STATE=State()
 
+# ---------- HELPERS ----------
 def font(sz): return pygame.font.Font(None, sz)
 def font_calc(sz):
     try:
@@ -66,6 +69,32 @@ def right_buttons(surf, labels):
         btns.append(r); y+=h
     return btns
 
+# ---------- ANALOG CLOCK ----------
+def draw_analog_clock(surf, cx, cy, r):
+    # ticks
+    for i in range(60):
+        ang = math.radians(i*6 - 90)
+        inner = r-6 if i % 5 else r-10
+        x1 = cx + int(math.cos(ang)*inner)
+        y1 = cy + int(math.sin(ang)*inner)
+        x2 = cx + int(math.cos(ang)*r)
+        y2 = cy + int(math.sin(ang)*r)
+        pygame.draw.line(surf, AMBER, (x1,y1), (x2,y2), 1 if i%5 else 2)
+    # hands
+    t = time.localtime()
+    sec = t.tm_sec
+    minute = t.tm_min + sec/60.0
+    hour = (t.tm_hour%12) + minute/60.0
+    def hand(angle_deg, length, width):
+        a = math.radians(angle_deg - 90)
+        x = cx + int(math.cos(a)*length)
+        y = cy + int(math.sin(a)*length)
+        pygame.draw.line(surf, AMBER, (cx,cy), (x,y), width)
+    hand(hour*30,   int(r*0.55), 3)
+    hand(minute*6,  int(r*0.75), 2)
+    hand(sec*6,     int(r*0.85), 1)
+
+# ---------- HEADERS ----------
 def draw_header_center_logo(surf, title, logo_img):
     content_w=LOG_W-RIGHT_W-GUTTER-2*MARGIN; content_x=MARGIN
     if logo_img:
@@ -75,30 +104,40 @@ def draw_header_center_logo(surf, title, logo_img):
     surf.blit(ts,(tx, MARGIN+(logo_img.get_height()+2 if logo_img else 4)))
     pygame.draw.line(surf,AMBER,(MARGIN,HEADER_H-2),(LOG_W-RIGHT_W-GUTTER,HEADER_H-2),1)
 
+# ---------- PAGES ----------
 def draw_home(surf, logo_small):
     surf.fill(BLACK)
     if logo_small: surf.blit(logo_small,(MARGIN,MARGIN))
     text(surf,"BMW",(LOG_W-RIGHT_W - GUTTER - font(18).size("BMW")[0])//2, MARGIN+4, sz=18)
 
-    # ---- BIG TIME (reduced to half size) ----
-    t=time.strftime("%I:%M%p").lstrip("0")
-    time_sz=18                      # half of the previous 36
-    time_x=MARGIN+2
-    time_y=LOG_H//2 - 15
-    text(surf,t,time_x,time_y,sz=time_sz,calc=True)
+    # Clock area (left)
+    if STATE.clock_mode == "analog":
+        avail_w = LOG_W - RIGHT_W - GUTTER - 2*MARGIN
+        cx = MARGIN + avail_w//2
+        cy = LOG_H//2 - 8
+        r  = min(avail_w, LOG_H//2) // 2
+        draw_analog_clock(surf, cx, cy, r)
+        y_base = cy + r + 6
+    else:
+        # digital (compact, left-aligned)
+        t_str = time.strftime("%I:%M%p").lstrip("0")
+        time_sz = 18
+        time_x  = MARGIN + 2
+        time_y  = LOG_H//2 - 15
+        text(surf, t_str, time_x, time_y, sz=time_sz, calc=True)
+        y_base = time_y + time_sz + 6
 
-    # ---- TEMP | DATE ----
-    y=time_y+time_sz+6
-    tmp=temp_display(DEFAULT_TEMP_F); f24=font(24); tmp_w=f24.size(tmp)[0]
-    text(surf,tmp,MARGIN+6,y,sz=24)
-    px=MARGIN+6+tmp_w+10
-    pygame.draw.line(surf,AMBER,(px,y-2),(px,y+28),1)
-    dt=time.strftime("%m-%d")
-    text(surf,dt,px+8,y,sz=24)
+    # TEMP | DATE (no year), near the clock
+    tmp = temp_display(DEFAULT_TEMP_F)
+    f24 = font(24); tmp_w = f24.size(tmp)[0]
+    text(surf, tmp, MARGIN+6, y_base, sz=24)
+    px = MARGIN+6 + tmp_w + 10
+    pygame.draw.line(surf, AMBER, (px, y_base-2), (px, y_base+28), 1)
+    dt = time.strftime("%m-%d")
+    text(surf, dt, px+8, y_base, sz=24)
 
     # OIL counter bottom-left
-    od=days_since(STATE.last_oil_ts)
-    text(surf,f"OIL {od} d",MARGIN+6,LOG_H-18,sz=16)
+    od=days_since(STATE.last_oil_ts); text(surf,f"OIL {od} d",MARGIN+6,LOG_H-18,sz=16)
 
     labels=["VOLT","OIL","TEMP","MENU"]; btns=right_buttons(surf,labels)
     return btns, labels
@@ -127,12 +166,13 @@ def draw_menu(surf, logo_center):
     def opt(label,value):
         nonlocal y
         r=pygame.Rect(MARGIN+6,y,LOG_W-RIGHT_W-2*MARGIN-8,26); rect(surf,r)
-        text(surf,label,r.x+8,r.y+4,16); text(surf,value,r.right-60,r.y+4,16)
+        text(surf,label,r.x+8,r.y+4,16); text(surf,value,r.right-72,r.y+4,16)
         boxes.append((label,r)); y+=34
     opt("Temp Units","°C" if STATE.temp_c else "°F")
     opt("Speed Units","KMH" if STATE.speed_kmh else "MPH")
     opt("Auto Night","ON" if STATE.auto_night else "OFF")
-    opt("Brightness",f"{STATE.brightness:3d}%")
+    opt("Clock Style","ANALOG" if STATE.clock_mode=="analog" else "DIGITAL")
+    opt("Brightness",f"{STATE.brightness:3d}%")  # opens big slider page
     btns=right_buttons(surf,["HOME","BACK","MENU"])
     return btns,["HOME","BACK","MENU"],boxes
 
@@ -145,6 +185,7 @@ def draw_brightness(surf, logo_center):
     btns=right_buttons(surf,["HOME","BACK","MENU"])
     return btns,["HOME","BACK","MENU"],[("BAR",bar)]
 
+# ---------- SPLASH ----------
 def show_splash(screen, phys, img):
     if not img: return
     frame=fit_center_percent(img,phys,percent=0.70)
@@ -152,6 +193,7 @@ def show_splash(screen, phys, img):
     frame.blit(lbl,((phys[0]-lbl.get_width())//2,phys[1]-lbl.get_height()-20))
     screen.blit(frame,(0,0)); pygame.display.flip(); pygame.time.wait(3000)
 
+# ---------- MAIN ----------
 def main():
     fullscreen=("--fullscreen" in sys.argv) or ("-f" in sys.argv)
     pygame.init(); flags=pygame.FULLSCREEN if fullscreen else 0
@@ -179,6 +221,7 @@ def main():
                             if label=="Temp Units": STATE.temp_c=not STATE.temp_c
                             elif label=="Speed Units": STATE.speed_kmh=not STATE.speed_kmh
                             elif label=="Auto Night": STATE.auto_night=not STATE.auto_night
+                            elif label=="Clock Style": STATE.clock_mode = ("digital" if STATE.clock_mode=="analog" else "analog")
                             elif label=="Brightness": STATE.page="BRIGHTNESS"
 
                 if STATE.page=="BRIGHTNESS" and bright_boxes:
@@ -198,8 +241,7 @@ def main():
                             if lab in ("VOLT","OIL","TEMP","MENU"): STATE.page=lab
                         else:
                             if lab=="HOME": STATE.page="HOME"
-                            elif lab=="BACK":
-                                STATE.page = "MENU" if STATE.page=="BRIGHTNESS" else "HOME"
+                            elif lab=="BACK": STATE.page = "MENU" if STATE.page=="BRIGHTNESS" else "HOME"
                             elif lab=="MENU": STATE.page="MENU"
 
         if STATE.page=="HOME":
